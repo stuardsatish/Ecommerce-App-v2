@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens ported from the source web app's "default" theme
+ * (Ecommerce-sept-1-2026/src/theme/themes.js). Only the tokens actually used
+ * by user-facing screens are ported — the chart-* tokens exist only for the
+ * admin analytics dashboards, which are out of scope for this app, with ONE
+ * exception: `chart-gold`. Despite the `chart-` prefix, the user-facing mobile
+ * screens use it as the rating-star colour (ProductDetail's rating row and
+ * per-review stars, FiltersSidebar's rating filter, both order pages' review
+ * stars) — so it is ported for star rendering parity.
+ *
+ * brand-a / brand-b (alternate theme identities) are not ported — this app
+ * only needs the app's real, live identity. See MIGRATION_ANALYSIS.md §9
+ * Unclear Item 11.
+ */
+@layer base {
+    html,
+    body,
+    #root {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    :root {
+        --color-primary: #a43b31;
+        --color-primary-hover: #8a322a;
+        --color-primary-fg: #ffffff;
+        --color-accent: #f59e0b;
+        --color-accent-strong: #b45309;
+        --color-accent-subtle: #fef3c7;
+        --color-accent-fg: #1b1c1c;
+        --color-link: #2563eb;
+        --color-link-hover: #1d4ed8;
+        --color-ring: #f59e0b;
+        --color-disabled: #e4e2e1;
+        --color-disabled-fg: #a6a9ae;
+
+        --color-background: #fbf9f8;
+        --color-surface: #ffffff;
+        --color-surface-muted: #f6f3f2;
+        --color-surface-inverse: #1b1c1c;
+        --color-overlay: rgba(0, 0, 0, 0.4);
+
+        --color-ink: #1b1c1c;
+        --color-body: #44474c;
+        --color-muted: #74777d;
+        --color-inverse: #ffffff;
+
+        --color-border: #e4e2e1;
+        --color-border-strong: #c3c7c8;
+        --color-border-subtle: #f0eeed;
+
+        --color-success: #16a34a;
+        --color-success-fg: #ffffff;
+        --color-success-subtle: #dcfce7;
+        --color-success-border: #86efac;
+
+        --color-error: #ba1a1a;
+        --color-error-fg: #ffffff;
+        --color-error-subtle: #fee2e2;
+        --color-error-border: #fca5a5;
+
+        --color-warning: #ca8a04;
+        --color-warning-fg: #1b1c1c;
+        --color-warning-subtle: #fef3c7;
+        --color-warning-border: #fde68a;
+
+        --color-info: #2563eb;
+        --color-info-fg: #ffffff;
+        --color-info-subtle: #dbeafe;
+        --color-info-border: #bfdbfe;
+
+        --color-chart-gold: #d4af37;
+    }
+
+    .dark:root {
+        --color-primary: #d46a5e;
+        --color-primary-hover: #e27b6f;
+        --color-primary-fg: #2a0c08;
+        --color-accent: #fbbf24;
+        --color-accent-strong: #fcd34d;
+        --color-accent-subtle: #3a2e00;
+        --color-accent-fg: #1b1c1c;
+        --color-link: #7cb0ff;
+        --color-link-hover: #a9cbff;
+        --color-ring: #fbbf24;
+        --color-disabled: #2c3033;
+        --color-disabled-fg: #6b7075;
+
+        --color-background: #141618;
+        --color-surface: #1e2123;
+        --color-surface-muted: #282c2e;
+        --color-surface-inverse: #f6f3f2;
+        --color-overlay: rgba(0, 0, 0, 0.6);
+
+        --color-ink: #f2f3f4;
+        --color-body: #c7c9cc;
+        --color-muted: #9ba0a6;
+        --color-inverse: #141618;
+
+        --color-border: #33383b;
+        --color-border-strong: #464c50;
+        --color-border-subtle: #262a2c;
+
+        --color-success: #4ade80;
+        --color-success-fg: #052b12;
+        --color-success-subtle: #0e2a17;
+        --color-success-border: #166534;
+
+        --color-error: #ff7a6f;
+        --color-error-fg: #2a0806;
+        --color-error-subtle: #3a1512;
+        --color-error-border: #93000a;
+
+        --color-warning: #fbbf24;
+        --color-warning-fg: #1b1c1c;
+        --color-warning-subtle: #2e2405;
+        --color-warning-border: #b7791f;
+
+        --color-info: #60a5fa;
+        --color-info-fg: #06122a;
+        --color-info-subtle: #10233f;
+        --color-info-border: #1e40af;
+
+        --color-chart-gold: #e6c34d;
+    }
+}
+
+:root {
+    --font-display:
+        Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
+        Segoe UI Symbol, Noto Color Emoji;
+    --font-mono:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+    --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
+    --font-serif: Georgia, 'Times New Roman', serif;
+}

@@ -1,0 +1,80 @@
+import { useEffect, useState } from 'react';
+import { Linking, Pressable, Text, View } from 'react-native';
+
+import { LegalScreen, LegalSection, LegalText } from '@/components/LegalScreen';
+import { getInvoiceSettings } from '@/services/settingsService';
+
+/**
+ * Return & Refund Policy (roadmap task 1.16).
+ *
+ * Wording is kept word-for-word in step with the web app's
+ * `RefundPolicyPage.jsx` so a customer reading the policy on their phone and
+ * on the site sees the identical commitment — including the deliberately
+ * honest "contact us" cancellation path, since no self-service cancellation
+ * exists on either app yet (that's roadmap Phase 6).
+ *
+ * Support email/phone come from the admin-configurable `invoiceSettings` row,
+ * matching how the web page sources them.
+ */
+export default function ReturnsPolicyScreen() {
+  const [settings, setSettings] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getInvoiceSettings()
+      .then((data) => active && setSettings(data))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const supportEmail = settings?.supportEmail || settings?.email || '';
+  const supportPhone = settings?.supportPhone || settings?.mobile || '';
+
+  return (
+    <LegalScreen title="Return Policy" lastUpdated="October 2026">
+      <LegalSection title="Cancellations">
+        To cancel an order before it ships, contact us as soon as possible using the details below —
+        include your order number so we can act quickly. Once an order has shipped, it can no longer
+        be cancelled; you&apos;re welcome to request a return instead once it arrives.
+      </LegalSection>
+
+      <LegalSection title="Returns">
+        If something arrives damaged, incorrect, or not as described, contact us within 7 days of
+        delivery with your order number and we&apos;ll arrange a replacement or refund. Items should
+        be unused and in their original packaging where possible.
+      </LegalSection>
+
+      <LegalSection title="Refund timing">
+        Approved refunds for online payments are credited back to the original payment method via
+        Razorpay, typically within 5–7 business days. Cash on Delivery refunds are processed as
+        store credit or bank transfer, whichever we agree with you.
+      </LegalSection>
+
+      <LegalSection title="How to request one">
+        <LegalText>
+          Find your order number under My Orders or Past Orders, then reach out to us directly.
+        </LegalText>
+        <View className="mt-3 gap-2">
+          {supportEmail ? (
+            <Pressable
+              onPress={() => Linking.openURL(`mailto:${supportEmail}`)}
+              accessibilityRole="button"
+              className="active:opacity-60">
+              <Text className="font-sans-semibold text-[15px] text-link">{supportEmail}</Text>
+            </Pressable>
+          ) : null}
+          {supportPhone ? (
+            <Pressable
+              onPress={() => Linking.openURL(`tel:${supportPhone}`)}
+              accessibilityRole="button"
+              className="active:opacity-60">
+              <Text className="font-sans-semibold text-[15px] text-link">{supportPhone}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </LegalSection>
+    </LegalScreen>
+  );
+}

@@ -1,0 +1,148 @@
+// Ported verbatim from Ecommerce-sept-1-2026/src/utils/supabaseProducts.js and
+// src/utils/supabaseOrders.js — these are pure snake_case → camelCase row
+// normalizers with no DOM/browser dependency, so they port unchanged.
+
+/** Maps a `products` row (snake_case) to the camelCase shape used throughout the app. */
+export const mapProductRow = (row) => {
+  if (!row) return row;
+  return {
+    id: row.id,
+    productId: row.id,
+    title: row.title || '',
+    description: row.description || '',
+    shortDescription: row.short_description || '',
+    category: row.category || '',
+    brand: row.brand || '',
+    badge: row.badge || '',
+    sku: row.sku || '',
+    price: Number(row.price) || 0,
+    priceType: row.price_type || 'inclusive',
+    discount: Number(row.discount) || 0,
+    discountExpiry: row.discount_expiry || '',
+    gstRate: Number(row.gst_rate) || 0,
+    hsnCode: row.hsn_code || '',
+    stock: Number(row.stock) || 0,
+    maxStock: row.max_stock,
+    image: row.image || '',
+    thumbnail: row.thumbnail || row.image || '',
+    gallery: row.gallery || [],
+    rating: Number(row.rating) || 0,
+    reviewCount: Number(row.review_count) || 0,
+    status: row.status || 'active',
+    createdAt: row.created_at,
+    // Variant / combination product fields
+    hasVariants: Boolean(row.has_variants),
+    variants: Array.isArray(row.variants) ? row.variants : [],
+    attributes: Array.isArray(row.attributes) ? row.attributes : [],
+  };
+};
+
+export const mapProductRows = (rows) => (rows || []).map(mapProductRow);
+
+// Maps `orders` + `order_items` rows (snake_case, per 01-schema.sql) to the
+// camelCase shape the rest of the app was built around when orders lived in
+// Firestore. All reads from the orders table should go through this normalizer.
+//
+// IMPORTANT — resolvedFinalPrice compatibility:
+//   AdminOrdersPage (web, admin-only, not ported here) has a `resolvedFinalPrice`
+//   helper that detects an old Firestore-backend bug where finalPrice was stored
+//   equal to the MRP. It fires when `disc > 0 && stored >= mrp && mrp > 0`. To
+//   prevent that branch from double-discounting Supabase order items (where
+//   unit_price IS already the correct post-discount price), we intentionally do
+//   NOT expose a `price` field on mapped items so that mrp resolves to 0 and the
+//   condition `mrp > 0` stays false. `finalPrice` alone is enough for every UI
+//   consumer.
+export const mapOrderRow = (row) => {
+  if (!row) return row;
+  const items = (row.order_items || []).map((it) => ({
+    productId: it.product_id,
+    variantId: it.variant_id || null,
+    variantName: it.variant_name || null,
+    title: it.title || '',
+    quantity: Number(it.quantity) || 1,
+    // unit_price is the final charged price per unit (already discounted).
+    finalPrice: Number(it.unit_price) || 0,
+    discount: Number(it.discount) || 0,
+    lineTotal: Number(it.line_total) || 0,
+  }));
+
+  // address is jsonb in Supabase — expose under all aliases the UI checks.
+  const addr = row.address;
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    orderStatus: row.order_status || 'placed',
+    paymentStatus: row.payment_status || 'pending',
+    paymentMethod: row.payment_method || '',
+    source: row.source || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+
+    // Schema uses customer_* not user_*; re-expose under the camelCase names
+    // the rest of the UI expects.
+    userName: row.customer_name || '',
+    userEmail: row.customer_email || '',
+    userPhone: row.customer_phone || '',
+
+    // address is jsonb; expose under all aliases the UI checks
+    userAddress: addr,
+    address: addr,
+    shippingAddress: addr,
+
+    // financial fields
+    subtotal: Number(row.subtotal) || 0,
+    shipping: Number(row.shipping) || 0,
+    total: Number(row.total) || 0,
+    promoCode: row.promo_code || '',
+    promoDiscount: Number(row.promo_discount) || 0,
+
+    // GST breakdown (stored as cgst/sgst/igst on the orders row)
+    totalCgst: Number(row.cgst) || 0,
+    totalSgst: Number(row.sgst) || 0,
+    totalIgst: Number(row.igst) || 0,
+
+    // Razorpay IDs
+    razorpayOrderId: row.razorpay_order_id || '',
+    razorpayPaymentId: row.razorpay_payment_id || '',
+
+    // order_items mapped to `products` (UI-facing name for the line-items array)
+    products: items,
+  };
+};
+
+export const mapOrderRows = (rows) => (rows || []).map(mapOrderRow);
+
+/**
+ * Resolves the accurate image for an order line item.
+ * Prioritizes the specific variant's image when variantId or variant title matches,
+ * falling back to base product thumbnail/image.
+ */
+export const resolveOrderItemImage = (item, product) => {
+  if (!product) return item?.thumbnail || item?.image || '';
+  if (Array.isArray(product.variants) && product.variants.length > 0) {
+    let v = null;
+    const vid = item?.variantId || item?.variant_id;
+    if (vid) {
+      v = product.variants.find((x) => String(x.id) === String(vid));
+    }
+    if (!v && item?.title) {
+      const bracketMatch = item.title.match(/\[(.*?)\]/);
+      const variantNameInBracket = bracketMatch ? bracketMatch[1].trim().toLowerCase() : null;
+      if (variantNameInBracket) {
+        v = product.variants.find(
+          (x) => x.name && x.name.trim().toLowerCase() === variantNameInBracket
+        );
+      }
+      if (!v) {
+        v = product.variants.find(
+          (x) => x.name && item.title.toLowerCase().includes(x.name.trim().toLowerCase())
+        );
+      }
+    }
+    if (v && v.image) {
+      return v.image;
+    }
+  }
+  return product.thumbnail || product.image || item?.thumbnail || item?.image || '';
+};
