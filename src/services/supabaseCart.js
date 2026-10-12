@@ -64,7 +64,7 @@ export const upsertCartItem = async (uid, product, quantity) => {
       category: product.category || 'general',
       price: Number(product.price) || 0,
       discount: Number(product.discount || 0),
-      discount_expiry: product.discountExpiry || null,
+      discount_expiry: product.discountExpiry || product.discount_expiry || null,
     },
     { onConflict: 'user_id,product_id,variant_id' }
   );

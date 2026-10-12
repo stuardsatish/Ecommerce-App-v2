@@ -14,13 +14,31 @@
 /** `product.price` is the MRP. */
 export const getMrp = (product) => Number(product?.price || 0);
 
-/** Discount %, zeroed out once `discountExpiry` has passed. */
-export const getDiscount = (product) => {
-  if (product?.discountExpiry) {
-    const expiry = new Date(product.discountExpiry).getTime();
-    if (Date.now() > expiry) return 0;
+const isExpiryPast = (val) => {
+  if (!val) return false;
+  let expiry = NaN;
+  if (typeof val === 'string') {
+    expiry = new Date(val).getTime();
+    if (Number.isNaN(expiry)) {
+      const cleanStr = val.replace(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})\s+(AM|PM)/i, '$1 $2 $3');
+      expiry = new Date(cleanStr).getTime();
+    }
+  } else if (val?.toDate) {
+    expiry = val.toDate().getTime();
+  } else if (typeof val === 'number') {
+    expiry = val;
   }
-  return Number(product?.discount || 0);
+  return !Number.isNaN(expiry) && Date.now() > expiry;
+};
+
+/** Discount %, zeroed out once `discountExpiry` or `discount_expiry` has passed. */
+export const getDiscount = (product) => {
+  if (!product) return 0;
+  const disc = Number(product.discount || 0);
+  if (disc <= 0) return 0;
+  const expiryVal = product.discountExpiry || product.discount_expiry;
+  if (isExpiryPast(expiryVal)) return 0;
+  return disc;
 };
 
 /** MRP minus the active discount. */
@@ -38,31 +56,14 @@ export const getMaxStock = (product) =>
 /**
  * Same discount-expiry check as getDiscount, but for a cart line item (which
  * carries its own frozen `discount`/`discountExpiry` snapshot rather than a
- * live product). Handles the same string/number/Firestore-Timestamp expiry
- * shapes the source app defensively handles.
+ * live product). Handles string/number/Firestore-Timestamp and both camelCase/snake_case keys.
  */
 export const isDiscountActive = (item) => {
   if (!item) return false;
   const disc = Number(item.discount || 0);
   if (disc <= 0) return false;
-  if (item.discountExpiry) {
-    const val = item.discountExpiry;
-    let expiry = NaN;
-    if (typeof val === 'string') {
-      expiry = new Date(val).getTime();
-      if (Number.isNaN(expiry)) {
-        const cleanStr = val.replace(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})\s+(AM|PM)/i, '$1 $2 $3');
-        expiry = new Date(cleanStr).getTime();
-      }
-    } else if (val?.toDate) {
-      expiry = val.toDate().getTime();
-    } else if (typeof val === 'number') {
-      expiry = val;
-    }
-    if (!Number.isNaN(expiry) && Date.now() > expiry) {
-      return false;
-    }
-  }
+  const expiryVal = item.discountExpiry || item.discount_expiry;
+  if (isExpiryPast(expiryVal)) return false;
   return true;
 };
 

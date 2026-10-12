@@ -59,6 +59,12 @@ describe('getDiscount / getPrice', () => {
     expect(getPrice({ price: 1000, discount: 20, discountExpiry: PAST })).toBe(1000);
   });
 
+  it('honours and zeroes snake_case discount_expiry from Supabase', () => {
+    expect(getDiscount({ discount: 20, discount_expiry: FUTURE })).toBe(20);
+    expect(getDiscount({ discount: 20, discount_expiry: PAST })).toBe(0);
+    expect(getPrice({ price: 1000, discount: 20, discount_expiry: PAST })).toBe(1000);
+  });
+
   it('treats a discount with no expiry as permanent', () => {
     expect(getDiscount({ discount: 15 })).toBe(15);
   });

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -28,7 +28,7 @@ import {
   saveForLater,
 } from '@/services/savedItems';
 import { clearCartItems, upsertCartItem } from '@/services/supabaseCart';
-import { clearCart } from '@/store/CartSlice';
+import { clearCart, setCart } from '@/store/CartSlice';
 import { computeCartTotals, getPrice, getDiscount, isDiscountActive } from '@/utils/pricing';
 
 const DEFAULT_SHIPPING_CONFIG = { freeShippingThreshold: 500, shippingCost: 49 };
@@ -233,15 +233,17 @@ export default function CartScreen() {
       .catch(() => setCouponsLoaded(true));
   }, []);
 
-  // Price-change detection: compare each cart item's stored price/discount
-  // against the live product row. Only runs once per cart load.
+  // Price-change detection: compare each cart item's stored snapshot price/discount
+  // against the live product row. Runs once per cart load.
+  const priceCheckDoneRef = useRef(false);
   useEffect(() => {
-    if (!cartItems.length) return;
+    if (!cartItems.length || priceCheckDoneRef.current) return;
+    priceCheckDoneRef.current = true;
     let active = true;
     const productIds = [...new Set(cartItems.map((i) => i.productId || String(i.id || '').split('_var_')[0]).filter(Boolean))];
     supabase
       .from('products')
-      .select('id,price,discount,discount_expiry')
+      .select('id,price,discount,discount_expiry,variants')
       .in('id', productIds)
       .then(({ data }) => {
         if (!active || !data) return;
@@ -252,16 +254,34 @@ export default function CartScreen() {
           const pid = item.productId || String(item.id || '').split('_var_')[0];
           const live = byId[pid];
           if (!live) return;
-          const livePrice = getPrice(live);
-          const storedDiscount = isDiscountActive(item) ? Number(item.discount || 0) : 0;
-          const storedPrice = Number(item.price || 0) - (Number(item.price || 0) * storedDiscount) / 100;
-          // Flag if the live effective price differs by more than 1 rupee (float safety).
-          if (Math.abs(livePrice - storedPrice) > 1) {
+
+          // 1. Live product pricing
+          let liveMrp = Number(live.price || 0);
+          if (item.variant_id && Array.isArray(live.variants)) {
+            const vObj = live.variants.find((v) => v.id === item.variant_id);
+            if (vObj && vObj.price != null) {
+              liveMrp = Number(vObj.price);
+            }
+          }
+          const liveDiscount = getDiscount(live);
+          const liveEffectivePrice = liveMrp - (liveMrp * liveDiscount) / 100;
+
+          // 2. Stored cart item pricing from snapshot
+          const storedMrp = item.storedPrice != null ? Number(item.storedPrice) : Number(item.price || 0);
+          const storedDiscVal = item.storedDiscount != null ? Number(item.storedDiscount) : 0;
+          const storedExpiryVal = item.storedDiscountExpiry || '';
+          const storedDiscountActive = isDiscountActive({ discount: storedDiscVal, discountExpiry: storedExpiryVal });
+          const storedDiscount = storedDiscountActive ? storedDiscVal : 0;
+          const storedEffectivePrice = storedMrp - (storedMrp * storedDiscount) / 100;
+
+          // Flag if the live effective price differs by more than 0.5 rupee (float safety).
+          if (Math.abs(liveEffectivePrice - storedEffectivePrice) > 0.5) {
             const key = String(item.compound_id || item.id);
             changes[key] = {
-              storedPrice,
-              livePrice,
-              liveDiscount: live.discount || 0,
+              storedPrice: storedEffectivePrice,
+              livePrice: liveEffectivePrice,
+              liveMrp,
+              liveDiscount: Number(live.discount || 0),
               liveExpiry: live.discount_expiry || null,
             };
           }
@@ -270,8 +290,7 @@ export default function CartScreen() {
       })
       .catch(() => {}); // graceful: missing live data = no notice
     return () => { active = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount; cart items are stable from the DB load
+  }, [cartItems]);
 
   // Cross-sell: fetch top-rated products not already in cart.
   useEffect(() => {
@@ -400,6 +419,7 @@ export default function CartScreen() {
           .filter((item) => priceChanges[String(item.compound_id || item.id)])
           .map((item) => {
             const ch = priceChanges[String(item.compound_id || item.id)];
+            const livePriceToSave = ch.liveMrp != null ? ch.liveMrp : item.price;
             return upsertCartItem(
               uid,
               {
@@ -410,7 +430,7 @@ export default function CartScreen() {
                 title: item.title,
                 image: item.image,
                 category: item.category,
-                price: item.price, // MRP unchanged; effective price = price - (price * discount / 100)
+                price: livePriceToSave,
                 discount: ch.liveDiscount,
                 discountExpiry: ch.liveExpiry,
               },
@@ -419,6 +439,23 @@ export default function CartScreen() {
           })
       ).catch(() => {});
     }
+
+    // Update local cartItems in Redux so storedPrice reflects the acknowledged price
+    const updatedCartItems = cartItems.map((item) => {
+      const ch = priceChanges[String(item.compound_id || item.id)];
+      if (!ch) return item;
+      const livePriceToSave = ch.liveMrp != null ? ch.liveMrp : item.price;
+      return {
+        ...item,
+        price: livePriceToSave,
+        storedPrice: livePriceToSave,
+        storedDiscount: ch.liveDiscount,
+        storedDiscountExpiry: ch.liveExpiry || '',
+        discount: ch.liveDiscount,
+        discountExpiry: ch.liveExpiry || '',
+      };
+    });
+    dispatch(setCart(updatedCartItems));
     setAcknowledgedChanges(true);
     setPriceChanges({});
   };
@@ -659,16 +696,28 @@ Thank you.`;
           renderItem={({ item }) => (
             <View>
               {/* Price-change notice per line */}
-              {priceChanges[String(item.compound_id || item.id)] && !acknowledgedChanges ? (
-                <View className="mb-1 flex-row items-center gap-1.5 rounded-lg bg-warning-subtle px-3 py-1.5">
-                  <Icon name="alert-triangle" size={12} color={c.warning} />
-                  <Text className="flex-1 text-[11px] text-warning" numberOfLines={2}>
-                    Price {priceChanges[String(item.compound_id || item.id)].livePrice > priceChanges[String(item.compound_id || item.id)].storedPrice ? 'increased' : 'dropped'} from
-                    {' '}₹{priceChanges[String(item.compound_id || item.id)].storedPrice.toFixed(0)} to
-                    {' '}₹{priceChanges[String(item.compound_id || item.id)].livePrice.toFixed(0)}
-                  </Text>
-                </View>
-              ) : null}
+              {priceChanges[String(item.compound_id || item.id)] && !acknowledgedChanges ? (() => {
+                const change = priceChanges[String(item.compound_id || item.id)];
+                const isIncrease = change.livePrice > change.storedPrice;
+                return (
+                  <View className={`mb-1 flex-row items-center gap-1.5 rounded-lg px-3 py-1.5 ${
+                    isIncrease ? 'bg-amber-500/10' : 'bg-emerald-500/10'
+                  }`}>
+                    <Icon
+                      name={isIncrease ? 'trending-up' : 'trending-down'}
+                      size={12}
+                      color={isIncrease ? '#d97706' : '#059669'}
+                    />
+                    <Text className={`flex-1 text-[11px] font-sans-medium ${
+                      isIncrease ? 'text-amber-800' : 'text-emerald-800'
+                    }`} numberOfLines={2}>
+                      Price {isIncrease ? 'increased' : 'dropped'} from
+                      {' '}₹{change.storedPrice.toFixed(0)} to
+                      {' '}₹{change.livePrice.toFixed(0)}
+                    </Text>
+                  </View>
+                );
+              })() : null}
               <CartLineItem
                 item={item}
                 onSaveForLater={() => handleSaveForLater(item)}

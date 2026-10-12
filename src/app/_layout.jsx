@@ -37,6 +37,7 @@ const areCartItemsEqual = (arr1, arr2) => {
         if (!item2) return false;
         if (item1.quantity !== item2.quantity) return false;
         if (item1.price !== item2.price) return false;
+        if (Number(item1.storedPrice || 0) !== Number(item2.storedPrice || 0)) return false;
         if (Number(item1.discount || 0) !== Number(item2.discount || 0)) return false;
         if ((item1.discountExpiry || '') !== (item2.discountExpiry || '')) return false;
         if ((item1.variant_id || '') !== (item2.variant_id || '')) return false;
@@ -88,7 +89,7 @@ function AuthGate({ children }) {
                 const { data, error } = await supabase
                     .from('cart_items')
                     .select(
-                        'quantity, product_id, variant_id, variant_name, price, title, image, category, products(title, price, discount, discount_expiry, stock, thumbnail, image, category, variants)'
+                        'quantity, product_id, variant_id, variant_name, price, discount, discount_expiry, title, image, category, products(id, title, price, discount, discount_expiry, stock, thumbnail, image, category, variants)'
                     )
                     .eq('user_id', uid);
 
@@ -107,6 +108,18 @@ function AuthGate({ children }) {
                     );
                     const resolvedImage = variantObj?.image || row.image || p.thumbnail || p.image || '';
 
+                    // Stored price & discount snapshot from cart_items row:
+                    const storedPrice = Number(row.price != null ? row.price : 0);
+                    const storedDiscount = Number(row.discount || 0);
+                    const storedDiscountExpiry = row.discount_expiry || '';
+
+                    // Live product price:
+                    const livePrice = variantId && variantObj?.price != null
+                        ? Number(variantObj.price)
+                        : (p.price != null ? Number(p.price) : storedPrice);
+                    const liveDiscount = Number(p.discount || 0);
+                    const liveDiscountExpiry = p.discount_expiry || '';
+
                     return {
                         id: compoundId,
                         compound_id: compoundId,
@@ -114,15 +127,17 @@ function AuthGate({ children }) {
                         variant_id: variantId,
                         variant_name: row.variant_name || '',
                         title: p.title || row.title || '',
-                        // Use variant price from cart_items row (already stored correctly on add)
-                        price: variantId ? Number(row.price) || 0 : Number(p.price) || 0,
+                        price: livePrice,
+                        storedPrice: storedPrice > 0 ? storedPrice : livePrice,
+                        storedDiscount,
+                        storedDiscountExpiry,
                         quantity: row.quantity,
                         image: resolvedImage,
                         thumbnail: resolvedImage,
                         stock: variantObj?.stock != null ? Number(variantObj.stock) : p.stock || 0,
                         category: p.category || row.category || 'general',
-                        discount: Number(p.discount || 0),
-                        discountExpiry: p.discount_expiry || '',
+                        discount: liveDiscount,
+                        discountExpiry: liveDiscountExpiry,
                     };
                 });
 
