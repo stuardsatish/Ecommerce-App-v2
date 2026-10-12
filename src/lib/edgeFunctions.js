@@ -3,7 +3,7 @@
 // path changed.
 import { supabase } from '@/lib/supabase';
 
-export const FUNCTIONS_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1`;
+export const FUNCTIONS_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://hexosjsftzdqmwqbeahy.supabase.co'}/functions/v1`;
 
 /** JSON headers + the current Supabase session's access token, if any. */
 export async function functionAuthHeaders() {
