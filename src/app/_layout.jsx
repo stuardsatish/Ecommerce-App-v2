@@ -41,6 +41,7 @@ const areCartItemsEqual = (arr1, arr2) => {
         if (Number(item1.discount || 0) !== Number(item2.discount || 0)) return false;
         if ((item1.discountExpiry || '') !== (item2.discountExpiry || '')) return false;
         if ((item1.variant_id || '') !== (item2.variant_id || '')) return false;
+        if (!!item1.unavailable !== !!item2.unavailable) return false;
     }
     return true;
 };
@@ -86,12 +87,21 @@ function AuthGate({ children }) {
             let fetchCartTimeout = null;
 
             const fetchCart = async () => {
-                const { data, error } = await supabase
-                    .from('cart_items')
-                    .select(
-                        'quantity, product_id, variant_id, variant_name, price, discount, discount_expiry, title, image, category, products(id, title, price, discount, discount_expiry, stock, thumbnail, image, category, variants)'
-                    )
-                    .eq('user_id', uid);
+                // The option-model columns (migration 20261014_01) are optional here: if the database predates them,
+                // fall back to the original column list so the cart still loads (rollout order must never break shopping).
+                const CART_COLS =
+                    'quantity, product_id, variant_id, variant_name, price, discount, discount_expiry, title, image, category';
+                const PRODUCT_COLS =
+                    'id, title, price, discount, discount_expiry, stock, thumbnail, image, category, variants';
+                const selectCart = (productCols) =>
+                    supabase
+                        .from('cart_items')
+                        .select(`${CART_COLS}, products(${productCols})`)
+                        .eq('user_id', uid);
+                let { data, error } = await selectCart(
+                    `${PRODUCT_COLS}, has_variants, main_option_enabled, track_inventory`
+                );
+                if (error) ({ data, error } = await selectCart(PRODUCT_COLS));
 
                 if (error) {
                     console.error('Error loading cart:', error);
@@ -107,16 +117,30 @@ function AuthGate({ children }) {
                         (v) => v.id === variantId
                     );
                     const resolvedImage = variantObj?.image || row.image || p.thumbnail || p.image || '';
+                    // Is this line still something the shop can sell? A variant that was deactivated / deleted, or a
+                    // main product that is no longer sold on its own, must NOT silently fall back to the main
+                    // product's price & stock.
+                    const missingVariant = !!variantId && !variantObj;
+                    const mainNotSold = !variantId && !!p.has_variants && p.main_option_enabled === false;
+                    const unavailable = missingVariant || mainNotSold;
+                    // stock tracking off for this option => always in stock
+                    const untracked = variantId
+                        ? variantObj?.track_inventory === false
+                        : p.track_inventory === false;
 
                     // Stored price & discount snapshot from cart_items row:
                     const storedPrice = Number(row.price != null ? row.price : 0);
                     const storedDiscount = Number(row.discount || 0);
                     const storedDiscountExpiry = row.discount_expiry || '';
 
-                    // Live product price:
-                    const livePrice = variantId && variantObj?.price != null
-                        ? Number(variantObj.price)
-                        : (p.price != null ? Number(p.price) : storedPrice);
+                    // Live product price (a missing variant keeps the price the customer saw; the line is flagged unavailable):
+                    const livePrice = missingVariant
+                        ? storedPrice
+                        : variantId && variantObj?.price != null
+                          ? Number(variantObj.price)
+                          : p.price != null
+                            ? Number(p.price)
+                            : storedPrice;
                     const liveDiscount = Number(p.discount || 0);
                     const liveDiscountExpiry = p.discount_expiry || '';
 
@@ -134,10 +158,17 @@ function AuthGate({ children }) {
                         quantity: row.quantity,
                         image: resolvedImage,
                         thumbnail: resolvedImage,
-                        stock: variantObj?.stock != null ? Number(variantObj.stock) : p.stock || 0,
+                        stock: unavailable
+                            ? 0
+                            : untracked
+                              ? 9999
+                              : variantObj?.stock != null
+                                ? Number(variantObj.stock)
+                                : p.stock || 0,
                         category: p.category || row.category || 'general',
                         discount: liveDiscount,
                         discountExpiry: liveDiscountExpiry,
+                        unavailable,
                     };
                 });
 

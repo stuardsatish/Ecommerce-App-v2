@@ -10,9 +10,14 @@
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const ALLOWED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 
+// The extension of the LEAF only: a name without a dot ('file:///cache/ImagePicker/1234', 'blob:http://host/uuid') has none, and a dot in a
+// folder or host name ('/data/user/0/com.app.id/cache/1234') is not one. (It used to take everything after the last dot of the whole string,
+// which turned those URIs into a bogus "extension" and refused a perfectly good image.) With no extension the mime type decides.
 const extOf = (asset) => {
-  const name = asset.fileName || asset.uri || '';
-  return (name.split('.').pop() || '').toLowerCase().split('?')[0];
+  const name = String(asset.fileName || asset.uri || '').split('?')[0];
+  const leaf = name.split('/').pop() || '';
+  const dot = leaf.lastIndexOf('.');
+  return dot > 0 ? leaf.slice(dot + 1).toLowerCase() : '';
 };
 
 /**

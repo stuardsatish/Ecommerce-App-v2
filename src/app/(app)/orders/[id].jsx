@@ -10,8 +10,11 @@ import { Icon } from '@/components/Icon';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
-import { nextAddQuantity, upsertCartItem } from '@/services/supabaseCart';
-import { addCart } from '@/store/CartSlice';
+import { buyAgain as buyAgainService } from '@/services/buyAgain';
+import { OrderReturnsSection } from '@/components/returns/OrderReturnsSection';
+import { OrderRefundSection } from '@/components/returns/OrderRefundSection';
+import { TrackingCard } from '@/components/TrackingCard';
+import { queryOrdersWithShipments } from '@/services/shipments';
 import { generateAndShareInvoice } from '@/utils/invoice';
 import { mapOrderRow, resolveOrderItemImage } from '@/utils/mappers';
 import { orderNo, statusMeta } from '@/utils/orders';
@@ -73,11 +76,9 @@ export default function OrderDetailScreen() {
     const fetchOrder = async () => {
       setLoading(true);
       try {
-        const { data: row, error: fetchError } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('id', id)
-          .single();
+        const { data: row, error: fetchError } = await queryOrdersWithShipments((select) =>
+          supabase.from('orders').select(select).eq('id', id).single()
+        );
         if (fetchError || !row) {
           if (active) setError(true);
           return;
@@ -113,27 +114,27 @@ export default function OrderDetailScreen() {
     };
   }, [id]);
 
-  const buyAgain = () => {
-    (order?.products || []).forEach((p) => {
-      const compoundId = p.variantId ? `${p.productId}_${p.variantId}` : p.productId;
-      const item = {
-        id: compoundId,
-        productId: p.productId,
-        variant_id: p.variantId || undefined,
-        variant_name: p.variantName || undefined,
-        title: p.title,
-        price: unitPrice(p),
-        image: p.thumbnail || p.image,
-        thumbnail: p.thumbnail || p.image,
-        category: p.category,
-        stock: p.stock || 0,
-      };
-      const qty = nextAddQuantity(cartItems, compoundId);
-      dispatch(addCart(item));
-      upsertCartItem(user?.uid, item, qty);
-    });
-    toast.success('Items added to your cart'); // source: OrderDetailPage's buyAgain
-    router.push('/cart');
+  // Re-adds the SAME option of every line (main or the specific variant) at the ordered quantity, at its CURRENT price
+  // and stock — clamped to stock, with a message for anything skipped or reduced (services/buyAgain.js).
+  const buyAgain = async () => {
+    try {
+      const r = await buyAgainService({
+        orderLines: order?.products,
+        cartItems,
+        dispatch,
+        uid: user?.uid,
+      });
+      if (!r.added) {
+        toast.error(r.message || 'Nothing could be added to your cart');
+        return;
+      }
+      if (r.skipped.length) toast.info(r.message);
+      else toast.success(r.message);
+      router.push('/cart');
+    } catch (err) {
+      console.error('buy again:', err);
+      toast.error('Could not add these items to your cart');
+    }
   };
 
   const downloadInvoice = () => {
@@ -218,6 +219,8 @@ export default function OrderDetailScreen() {
             </View>
           </View>
 
+          <TrackingCard order={order} />
+
           <View className="gap-3 rounded-xl border border-border bg-surface p-4">
             <Text className="font-sans-bold text-base text-ink">Items ({items.length})</Text>
             {items.map((p, i) => (
@@ -250,6 +253,13 @@ export default function OrderDetailScreen() {
               </View>
             ))}
           </View>
+
+          {/* Phase 6-8: what can be returned / exchanged, the request form and the customer's requests for this order. Shows nothing
+              while the order is not delivered (and has no request) or when the server has no returns feature yet. */}
+          <OrderReturnsSection order={order} user={user} />
+
+          {/* Phase 12: a cancelled order - why, and where its refund stands (also a refund the shop made on its own) */}
+          <OrderRefundSection order={order} />
 
           <View className="gap-3 rounded-xl border border-border bg-surface p-4">
             <Text className="font-sans-bold text-base text-ink">Summary</Text>

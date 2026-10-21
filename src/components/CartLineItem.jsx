@@ -79,6 +79,14 @@ export function CartLineItem({ item, onSaveForLater, savingForLater = false }) {
             className="mt-0.5 font-sans-bold text-sm leading-[18px] text-ink">
             {item.title}
           </Text>
+          {item.variant_name ? (
+            <Text numberOfLines={1} className="font-sans-medium text-xs text-body">
+              {item.variant_name}
+            </Text>
+          ) : null}
+          {item.unavailable ? (
+            <Text className="font-sans-bold text-[11px] text-error">NO LONGER AVAILABLE</Text>
+          ) : null}
         </View>
 
         <View className="flex-row items-center justify-between pt-2">

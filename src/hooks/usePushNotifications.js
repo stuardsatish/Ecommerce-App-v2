@@ -24,11 +24,14 @@ import {
   deregisterPushToken,
   getExpoPushToken,
   listNotifications,
+  markNotificationRead,
   registerPushToken,
 } from '@/services/notifications';
+import { routeForPushData, unreadCount as countUnread } from '@/utils/notificationModel';
 
 /**
- * Routes the user to the right screen based on notification type/data.
+ * Routes the user to the right screen based on the notification's data.type
+ * (the order, the product, My Returns ...; the inbox when it has no destination).
  * Called when the user taps a notification (foreground or background).
  *
  * @param {object} notification
@@ -36,13 +39,9 @@ import {
 function handleNotificationNavigation(notification) {
   const data = notification?.request?.content?.data || {};
   try {
-    if (data.orderId) {
-      router.push(`/orders/${data.orderId}`);
-    } else if (data.productId) {
-      router.push(`/products/${data.productId}`);
-    } else {
-      router.push('/notifications');
-    }
+    // the dispatcher puts the row's id into the push data: tapping it counts as reading it
+    if (data.notificationId) markNotificationRead(data.notificationId);
+    router.push(routeForPushData(data));
   } catch {
     // If routing fails (e.g. app not fully mounted), ignore.
   }
@@ -94,7 +93,7 @@ export function usePushNotifications() {
     const refresh = async () => {
       const notifications = await listNotifications({ limit: 50 });
       if (mounted) {
-        setUnreadCount(notifications.filter((n) => !n.is_read).length);
+        setUnreadCount(countUnread(notifications));
       }
     };
 
@@ -111,7 +110,7 @@ export function usePushNotifications() {
       // Refresh unread count when a new notification arrives in the foreground.
       if (user?.uid) {
         listNotifications({ limit: 50 }).then((list) => {
-          setUnreadCount(list.filter((n) => !n.is_read).length);
+          setUnreadCount(countUnread(list));
         });
       }
     });

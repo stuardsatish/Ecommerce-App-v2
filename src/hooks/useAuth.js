@@ -12,6 +12,8 @@ import { useCallback } from 'react';
 import { useDispatch } from 'react-redux';
 
 import { supabase } from '@/lib/supabase';
+import { inboxService } from '@/services/inbox';
+import { currentPushToken, rememberPushToken } from '@/services/pushToken';
 import { clearUser, setUser } from '@/store/UserSlice';
 import { clearLocalSession, registerNewSession } from '@/utils/sessionManager';
 
@@ -123,9 +125,20 @@ export function useAuth() {
    * profiles id on the NEXT login and can bounce the user straight back out.
    *
    * The `profiles` update has to happen while the session is still valid —
-   * i.e. before `signOut()` — or RLS rejects it.
+   * i.e. before `signOut()` — or RLS rejects it. The same goes for this phone's
+   * push token: it is unregistered here so the customer who signs out stops
+   * receiving their order / refund notifications on this device.
    */
   const logout = useCallback(async (uid) => {
+    const pushToken = currentPushToken();
+    if (pushToken) {
+      try {
+        await inboxService.unregisterToken(pushToken);
+      } catch (e) {
+        console.log('Could not unregister the push token:', e);
+      }
+      rememberPushToken(null);
+    }
     if (uid) {
       try {
         await supabase.from('profiles').update({ active_session_id: null }).eq('id', uid);

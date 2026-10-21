@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,30 +12,21 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/services/notifications';
+import { notificationIconKey, notificationRoute, timeAgo, unreadCount as countUnread } from '@/utils/notificationModel';
 
-/** Friendly icon name per notification type. */
-function notifIcon(type) {
-  switch (type) {
-    case 'order_update': return 'package';
-    case 'back_in_stock': return 'check-circle';
-    case 'price_drop': return 'tag';
-    case 'promotion': return 'gift';
-    default: return 'bell';
-  }
-}
-
-/** Relative time label, e.g. "2 hours ago". */
-function timeAgo(isoString) {
-  if (!isoString) return '';
-  const diff = Date.now() - new Date(isoString).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
+/** The model's neutral icon key -> a name <Icon> knows (an unknown name renders nothing). */
+const ICONS = {
+  order: 'package',
+  return: 'rotate-ccw',
+  exchange: 'rotate-ccw',
+  refund: 'credit-card',
+  stock: 'check-circle-2',
+  price: 'tag',
+  promo: 'gift',
+  admin: 'info',
+  alert: 'alert-triangle',
+  bell: 'bell',
+};
 
 export default function NotificationsScreen() {
   const c = useThemeColors();
@@ -55,20 +47,22 @@ export default function NotificationsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
-  const handleMarkRead = async (item) => {
-    if (item.is_read) return;
-    await markNotificationRead(item.id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
-    );
+  /** Opens the notification: marks it read and, when it points somewhere (the order, My Returns, the product), goes there. */
+  const handleOpen = async (item) => {
+    if (!item.read) {
+      await markNotificationRead(item.id);
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
+    }
+    const target = notificationRoute(item, 'app');
+    if (target) router.push(target);
   };
 
   const handleMarkAllRead = async () => {
     await markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const unreadCount = countUnread(notifications);
 
   return (
     <View className="flex-1 bg-background">
@@ -86,12 +80,12 @@ export default function NotificationsScreen() {
 
         {loading ? (
           <View className="flex-1 items-center justify-center gap-3">
-            <Icon name="loader" size={28} color={c.muted} />
+            <Icon name="clock" size={28} color={c.muted} />
             <Text className="text-sm text-muted">Loading…</Text>
           </View>
         ) : notifications.length === 0 ? (
           <View className="flex-1 items-center justify-center gap-4 px-6">
-            <Icon name="bell-off" size={48} color={c.borderStrong} />
+            <Icon name="bell" size={48} color={c.borderStrong} />
             <Text className="font-sans-semibold text-sm text-muted text-center">
               No notifications yet.{'\n'}We'll let you know about orders, deals, and more.
             </Text>
@@ -105,7 +99,8 @@ export default function NotificationsScreen() {
             onRefresh={load}
             renderItem={({ item }) => (
               <Pressable
-                onPress={() => handleMarkRead(item)}
+                onPress={() => handleOpen(item)}
+                accessibilityRole="button"
                 className="active:opacity-70"
                 style={{
                   flexDirection: 'row',
@@ -114,7 +109,7 @@ export default function NotificationsScreen() {
                   padding: 16,
                   borderBottomWidth: 1,
                   borderBottomColor: c.border,
-                  backgroundColor: item.is_read ? 'transparent' : `${c.primary}10`,
+                  backgroundColor: item.read ? 'transparent' : `${c.primary}10`,
                 }}>
                 {/* Icon badge */}
                 <View
@@ -127,7 +122,7 @@ export default function NotificationsScreen() {
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}>
-                  <Icon name={notifIcon(item.type)} size={18} color={c.primary} />
+                  <Icon name={ICONS[notificationIconKey(item)] || 'bell'} size={18} color={c.primary} />
                 </View>
 
                 {/* Content */}
@@ -140,7 +135,7 @@ export default function NotificationsScreen() {
                       {item.title || 'Notification'}
                     </Text>
                     <Text className="text-[11px] text-muted" style={{ flexShrink: 0 }}>
-                      {timeAgo(item.created_at)}
+                      {timeAgo(item.createdAt)}
                     </Text>
                   </View>
                   {item.body ? (
@@ -151,7 +146,7 @@ export default function NotificationsScreen() {
                 </View>
 
                 {/* Unread dot */}
-                {!item.is_read ? (
+                {!item.read ? (
                   <View
                     style={{
                       width: 8,

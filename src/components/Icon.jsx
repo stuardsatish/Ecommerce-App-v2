@@ -81,6 +81,7 @@ const NAMES = {
   image: [Feather, 'image'],
   lock: [Feather, 'lock'],
   copy: [Feather, 'copy'],
+  'external-link': [Feather, 'external-link'],
   eye: [Feather, 'eye'],
   'eye-off': [Feather, 'eye-off'],
 

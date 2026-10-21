@@ -52,6 +52,12 @@ export const getShippingSettings = async () => {
 };
 
 /**
+ * Store-wide return / exchange defaults (settings row id='returnPolicyDefaults'), read by the static policy screen.
+ * Raw document or null — `utils/policyCopy.normalizeReturnPolicyDefaults` turns it into clean values / text.
+ */
+export const getReturnPolicyDefaults = async () => getSettingsData('returnPolicyDefaults');
+
+/**
  * Reads the promotional banner / flash-sale content from the settings row
  * id='promoBanner' (roadmap task 2.4).
  *

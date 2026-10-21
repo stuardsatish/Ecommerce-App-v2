@@ -64,7 +64,7 @@ const FAQS = [
   },
   {
     q: 'How do returns and refunds work?',
-    a: "If something arrives damaged, incorrect, or not as described, contact us within 7 days of delivery with your order number and we'll arrange a replacement or refund. Approved refunds on online payments go back to the original payment method via Razorpay, typically within 5–7 business days. See the Return Policy for full details.",
+    a: "If something arrives damaged, incorrect, or not as described, contact us within the return window shown on the product page, with your order number, and we'll arrange a replacement or refund. Approved refunds on online payments go back to the original payment method via Razorpay, typically within 5–7 business days. See the Return Policy for full details.",
   },
   {
     q: 'Why can’t I review a product?',

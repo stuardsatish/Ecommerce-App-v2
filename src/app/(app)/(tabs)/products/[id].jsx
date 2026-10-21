@@ -28,6 +28,15 @@ import { addStockAlert, hasStockAlert, removeStockAlert } from '@/services/notif
 import { addCart, removeCart } from '@/store/CartSlice';
 import { addWishlist, removeWishlist } from '@/store/WishlistSlice';
 import { mapProductRow, mapProductRows } from '@/utils/mappers';
+import {
+  buildCartPayload,
+  cartCompoundId,
+  defaultOption,
+  getPurchaseOptions,
+  isAvailable,
+  optionForVariantId,
+  policySummary,
+} from '@/utils/purchaseOptions';
 import { addRecentlyViewed } from '@/utils/recentlyViewed';
 
 // Pure helpers ported from Ecommerce-sept-1-2026/src/pages/ProductDetail/ProductDetail.jsx.
@@ -90,7 +99,8 @@ export default function ProductDetailScreen() {
   const [reviewCount, setReviewCount] = useState(0);
   const [ratingStats, setRatingStats] = useState({ 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 });
 
-  const [selectedVariant, setSelectedVariant] = useState(null);
+  // The customer's pick: a variant object, null = the main option, undefined = "not chosen yet" (use the default option).
+  const [pickedVariant, setPickedVariant] = useState(undefined);
   const [activeImgIdx, setActiveImgIdx] = useState(0);
   const [descExpanded, setDescExpanded] = useState(false);
   const [specsOpen, setSpecsOpen] = useState(false);
@@ -108,7 +118,7 @@ export default function ProductDetailScreen() {
 
   useEffect(() => {
     setError(false);
-    setSelectedVariant(null);
+    setPickedVariant(undefined);
     setActiveImgIdx(0);
     setDescExpanded(false);
     setSpecsOpen(false);
@@ -282,20 +292,32 @@ export default function ProductDetailScreen() {
     }
   };
 
-  const activeVariant = selectedVariant;
+  // What is selected: the customer's pick, else the default option (the main product when it can be bought,
+  // otherwise the first variant in stock). The main product and every variant are independent options.
+  const activeVariant =
+    pickedVariant !== undefined
+      ? pickedVariant
+      : product
+        ? (defaultOption(product)?.variant ?? null)
+        : null;
+  const activeOption = product ? optionForVariantId(product, activeVariant?.id || '') : null;
   const mainImage = product?.thumbnail || product?.image;
   const galleryImages = product?.images || product?.productImages || product?.gallery || [];
   const allImages = [mainImage, ...galleryImages].filter(Boolean);
 
-  const displayStock = activeVariant
-    ? Number(activeVariant.stock) || 0
+  // stock === null => inventory is not tracked for this option (always available)
+  const untrackedStock = activeOption?.stock === null;
+  const displayStock = activeOption
+    ? untrackedStock
+      ? 9999
+      : activeOption.stock
     : product
       ? Number(product.stock) || 0
       : 0;
   const isOutOfStock = displayStock <= 0;
   const stockWarning = isOutOfStock
     ? 'Out of stock'
-    : displayStock <= 10
+    : !untrackedStock && displayStock <= 10
       ? `Only ${displayStock} left in stock - order soon`
       : null;
 
@@ -303,7 +325,7 @@ export default function ProductDetailScreen() {
   useEffect(() => {
     if (!isOutOfStock || !user?.uid || !product?.id) return;
     let active = true;
-    hasStockAlert(product.id, activeVariant?.id || null)
+    hasStockAlert(product.id, activeVariant?.id || '')
       .then((v) => { if (active) setHasAlert(v); })
       .catch(() => {});
     return () => { active = false; };
@@ -317,11 +339,11 @@ export default function ProductDetailScreen() {
     setAlertBusy(true);
     try {
       if (hasAlert) {
-        await removeStockAlert(product.id, activeVariant?.id || null);
+        await removeStockAlert(product.id, activeVariant?.id || '');
         setHasAlert(false);
         toast.success('Stock alert removed');
       } else {
-        await addStockAlert(product.id, activeVariant?.id || null);
+        await addStockAlert(product.id, activeVariant?.id || '');
         setHasAlert(true);
         toast.success('We\'ll notify you when it\'s back in stock!');
       }
@@ -332,7 +354,8 @@ export default function ProductDetailScreen() {
     }
   };
 
-  const mrpNum = activeVariant ? Number(activeVariant.price) || 0 : Number(product?.price || 0);
+  const purchaseOptions = useMemo(() => (product ? getPurchaseOptions(product) : []), [product]);
+  const mrpNum = activeOption ? activeOption.price : Number(product?.price || 0);
   const discountPct = (() => {
     if (product?.discountExpiry) {
       const expiry = new Date(product.discountExpiry).getTime();
@@ -344,36 +367,24 @@ export default function ProductDetailScreen() {
 
   const specRows = useMemo(() => normalizeSpecs(product?.specs), [product?.specs]);
 
-  const currentCartCompoundId = activeVariant
-    ? `${product?.id || id}_${activeVariant.id}`
-    : product?.id || id;
+  // Independent cart line per option: the product id (main) or `${productId}_${variantId}` (variant).
+  const currentCartCompoundId =
+    product && activeOption ? cartCompoundId(product, activeOption) : product?.id || id;
   const currentCartItem = cartItems.find(
     (item) => String(item.compound_id || item.id) === String(currentCartCompoundId)
   );
-
-  const buildCartPayload = () => {
-    const variantImg = activeVariant?.image || product.thumbnail || product.image;
-    return activeVariant
-      ? {
-          ...product,
-          variant_id: activeVariant.id,
-          variant_name: activeVariant.name,
-          selected_variant: activeVariant,
-          price: activeVariant.price,
-          stock: activeVariant.stock,
-          image: variantImg,
-          thumbnail: variantImg,
-        }
-      : product;
-  };
 
   const handleAddToCart = () => {
     if (!user) {
       router.push('/login');
       return;
     }
+    if (!activeOption || !isAvailable(activeOption)) {
+      toast.error('This option is out of stock');
+      return;
+    }
     const qty = nextAddQuantity(cartItems, currentCartCompoundId);
-    const cartPayload = buildCartPayload();
+    const cartPayload = buildCartPayload(product, activeOption);
     dispatch(
       addCart({
         ...cartPayload,
@@ -388,7 +399,7 @@ export default function ProductDetailScreen() {
 
   const handleIncrement = () => {
     const qty = nextAddQuantity(cartItems, currentCartCompoundId);
-    const cartPayload = buildCartPayload();
+    const cartPayload = buildCartPayload(product, activeOption);
     dispatch(
       addCart({
         ...cartPayload,
@@ -421,9 +432,13 @@ export default function ProductDetailScreen() {
       router.push('/login');
       return;
     }
+    if (!activeOption || !isAvailable(activeOption)) {
+      toast.error('This option is out of stock');
+      return;
+    }
     if (!currentCartItem) {
       const qty = nextAddQuantity(cartItems, currentCartCompoundId);
-      const cartPayload = buildCartPayload();
+      const cartPayload = buildCartPayload(product, activeOption);
       dispatch(
         addCart({
           ...cartPayload,
@@ -540,29 +555,31 @@ export default function ProductDetailScreen() {
               )}
             </View>
 
-            {product.hasVariants && product.variants?.length > 0 ? (
+            {product.hasVariants && purchaseOptions.some((o) => o.kind === 'variant') ? (
               <View className="gap-2 pt-2">
                 <Text className="font-sans-semibold text-xs uppercase tracking-wide text-muted">
-                  {product.attributes?.[0]?.name || 'Select Variant'}
-                  {activeVariant ? ` — ${activeVariant.name}` : ''}
+                  {product.attributes?.[0]?.name || 'Choose an option'}
+                  {activeOption ? ` — ${activeOption.label}` : ''}
                 </Text>
-                <View className="flex-row flex-wrap gap-2">
-                  {product.variants.map((v) => {
-                    const isSelected = activeVariant?.id === v.id;
-                    const outOfStock = Number(v.stock) <= 0;
+                <View className="flex-row flex-wrap gap-2" accessibilityRole="radiogroup">
+                  {purchaseOptions.map((o) => {
+                    const isSelected = o.variantId === (activeVariant?.id ? String(activeVariant.id) : '');
+                    const unavailable = !isAvailable(o);
+                    const img = o.image || mainImage;
                     return (
                       <Pressable
-                        key={v.id}
-                        disabled={outOfStock}
-                        onPress={() => setSelectedVariant(isSelected ? null : v)}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: isSelected, disabled: outOfStock }}
+                        key={o.key || '__main__'}
+                        disabled={unavailable}
+                        onPress={() => setPickedVariant(o.variant)}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${o.label}, ${formatINR(o.price)}${unavailable ? ', out of stock' : ''}`}
+                        accessibilityState={{ selected: isSelected, disabled: unavailable }}
                         className={`flex-row items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3.5 active:opacity-70 ${
                           isSelected ? 'border-2 border-ink bg-ink' : 'border-border-strong'
                         }`}>
-                        {v.image || mainImage ? (
+                        {img ? (
                           <Image
-                            source={{ uri: v.image || mainImage }}
+                            source={{ uri: img }}
                             style={{ width: 44, height: 44, borderRadius: 6 }}
                             contentFit="cover"
                           />
@@ -571,16 +588,30 @@ export default function ProductDetailScreen() {
                           className={`font-sans-semibold text-[13px] ${
                             isSelected
                               ? 'text-inverse'
-                              : outOfStock
+                              : unavailable
                                 ? 'text-muted line-through'
                                 : 'text-ink'
                           }`}>
-                          {v.name} · ₹{v.price}
+                          {o.label} · {formatINR(o.price)}
                         </Text>
                       </Pressable>
                     );
                   })}
                 </View>
+              </View>
+            ) : null}
+
+            {activeOption ? (
+              <View className="gap-0.5">
+                {activeOption.sku ? (
+                  <Text className="font-sans text-xs text-body">
+                    SKU: <Text className="font-sans-semibold text-ink">{activeOption.sku}</Text>
+                  </Text>
+                ) : null}
+                <Text className="font-sans text-xs text-body">
+                  {policySummary(activeOption)}
+                  <Text className="text-muted"> (from delivery)</Text>
+                </Text>
               </View>
             ) : null}
 

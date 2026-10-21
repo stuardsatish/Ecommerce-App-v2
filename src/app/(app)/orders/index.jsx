@@ -14,6 +14,8 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/lib/toast';
 import { submitReview as submitReviewApi } from '@/services/reviews';
+import { returnsService } from '@/services/returns';
+import { queryOrdersWithShipments } from '@/services/shipments';
 import {
   removeReviewPhotoFiles,
   setReviewPhotos,
@@ -86,6 +88,7 @@ export default function OrdersScreen() {
   const [activeTab, setActiveTab] = useState(tab === 'PAST' ? 'PAST' : 'ONGOING');
   const [allOrders, setAllOrders] = useState([]);
   const [userReviews, setUserReviews] = useState({});
+  const [requestsByOrder, setRequestsByOrder] = useState({}); // orderId -> the customer's newest return / exchange request for it
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -97,10 +100,9 @@ export default function OrdersScreen() {
     setLoading(true);
     setFetchError(false);
     try {
-      const { data: rows, error } = await supabase
-        .from('orders')
-        .select('*, order_items(*)')
-        .eq('user_id', user.uid);
+      const { data: rows, error } = await queryOrdersWithShipments((select) =>
+        supabase.from('orders').select(select).eq('user_id', user.uid)
+      );
       if (error) throw error;
       const rawOrders = mapOrderRows(rows);
 
@@ -169,6 +171,25 @@ export default function OrdersScreen() {
       }
     };
     fetchUserReviews();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  // One status line per order ("Return · Approved"). A convenience only: the order screen shows the full state, so a failure
+  // here (or a server without the returns feature, where the list is empty) simply shows no line.
+  useEffect(() => {
+    let active = true;
+    if (!user?.uid) return undefined;
+    returnsService
+      .listMine()
+      .then((list) => {
+        if (!active) return;
+        const map = {};
+        for (const r of list) if (!map[r.orderId]) map[r.orderId] = r; // newest first
+        setRequestsByOrder(map);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -342,6 +363,7 @@ export default function OrdersScreen() {
             renderItem={({ item: order }) => (
               <OrderCard
                 order={order}
+                returnRequest={requestsByOrder[order.id]}
                 getReview={(productId) => userReviews[`${order.id}_${productId}`]}
                 onDownloadInvoice={() => downloadInvoice(order)}
                 onReviewPress={(item) => openReviewModal(item, order.id)}

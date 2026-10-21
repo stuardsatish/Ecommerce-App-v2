@@ -401,6 +401,28 @@ export default function ProfileScreen() {
             )}
           </View>
 
+          {/* Returns & exchanges (Phase 6): the website reaches "My Returns" from its account menu; here Profile is the
+              account surface, next to the kebab menu entry. */}
+          <View className="gap-2 rounded-xl bg-surface p-4 shadow-card">
+            <Text className="mb-1 font-sans-semibold text-sm text-ink">Orders &amp; Returns</Text>
+            {[
+              { label: 'Past Orders', icon: 'archive', path: '/orders?tab=PAST' },
+              { label: 'My Returns & Exchanges', icon: 'rotate-ccw', path: '/returns' },
+            ].map((item) => (
+              <Pressable
+                key={item.path}
+                onPress={() => router.push(item.path)}
+                accessibilityRole="button"
+                className="-mx-2 flex-row items-center justify-between rounded-lg px-2 py-2.5 active:bg-surface-muted">
+                <View className="flex-row items-center gap-3">
+                  <Icon name={item.icon} size={16} color={c.primary} />
+                  <Text className="font-sans text-[13px] text-ink">{item.label}</Text>
+                </View>
+                <Icon name="chevron-right" size={16} color={c.muted} />
+              </Pressable>
+            ))}
+          </View>
+
           {/* Help & Support (roadmap tasks 1.14/1.16). The web app surfaces
               these through its Footer; this app has no footer, so Profile —
               its only account surface — carries them alongside the kebab

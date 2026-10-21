@@ -5,6 +5,8 @@ import { Icon } from '@/components/Icon';
 import { Stars } from '@/components/Stars';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { orderNo } from '@/utils/orders';
+import { requestSummaryLine } from '@/utils/requestModel';
+import { summarizeTracking, trackingHeadline } from '@/utils/shipmentModel';
 
 /**
  * Ported from UserOrdersPage.jsx / UserPastOrdersPage.jsx's mobile card
@@ -58,7 +60,12 @@ const STATUS_BADGES = {
 
 const FALLBACK_BADGE = { className: 'bg-surface-muted text-body', icon: 'clock', tone: 'body' };
 
-export function OrderCard({ order, getReview, onDownloadInvoice, onReviewPress, onPress }) {
+/**
+ * `returnRequest` (optional): the customer's newest return / exchange request for this order - shown as one status line
+ * ("Return · Approved"). A delivered order also carries a "Return / Exchange" link: both lead to the order screen, where the
+ * requests live (Phase 6; the website's order cards do the same).
+ */
+export function OrderCard({ order, returnRequest = null, getReview, onDownloadInvoice, onReviewPress, onPress }) {
   const c = useThemeColors();
   const items = order.products || [];
   const badge = STATUS_BADGES[order.orderStatus] || FALLBACK_BADGE;
@@ -73,6 +80,22 @@ export function OrderCard({ order, getReview, onDownloadInvoice, onReviewPress, 
           <Text numberOfLines={1} className="font-sans-bold text-sm text-ink">
             #{orderNo(order)}
           </Text>
+          {order.orderStatus === 'shipped' ? (
+            <Text numberOfLines={1} className="text-[11px] text-info">
+              {trackingHeadline(order)}
+              {summarizeTracking(order).courierName ? ` · ${summarizeTracking(order).courierName}` : ''}
+            </Text>
+          ) : null}
+          {returnRequest ? (
+            <Text numberOfLines={1} className="font-sans-semibold text-[11px] text-info">
+              {requestSummaryLine(returnRequest)}
+            </Text>
+          ) : null}
+          {order.orderStatus === 'delivered' ? (
+            <Pressable onPress={onPress} hitSlop={6} accessibilityRole="link" className="self-start active:opacity-60">
+              <Text className="font-sans-bold text-[11px] text-link">Return / Exchange</Text>
+            </Pressable>
+          ) : null}
         </View>
         <View className="flex-shrink-0 flex-row items-center gap-2.5">
           <Text className="font-sans-bold text-base text-primary">₹{Number(order.total).toFixed(2)}</Text>

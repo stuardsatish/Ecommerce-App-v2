@@ -57,12 +57,13 @@ export function AppHeader({ title }) {
   // "Help Center" is this app's own addition (roadmap task 1.14): the web app
   // reaches its help/policy pages through the Footer, which this app has no
   // equivalent of, so the kebab menu is the one always-reachable surface for
-  // them.
+  // them. "My Returns" mirrors the entry the website's MobileNav got with the returns / exchanges feature (Phase 6).
   const menuItems = [
     { label: 'My Profile', path: '/profile' },
     { label: 'My Addresses', path: '/addresses' },
     { label: 'Current Orders', path: '/orders?tab=ONGOING' },
     { label: 'Past Orders', path: '/orders?tab=PAST' },
+    { label: 'My Returns', path: '/returns' },
     { label: 'Edit Profile', path: '/profile' },
     { label: 'Help Center', path: '/support/faq' },
   ];

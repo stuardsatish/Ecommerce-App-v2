@@ -16,6 +16,7 @@ import {
 import { addWishlistItem, removeWishlistItem } from '@/services/supabaseWishlist';
 import { addCart, removeCart } from '@/store/CartSlice';
 import { addWishlist, removeWishlist } from '@/store/WishlistSlice';
+import { listPriceSummary, listStockSummary, needsOptionChoice } from '@/utils/purchaseOptions';
 
 /**
  * Ported from ProductCard.jsx's `variant="mobile"` branch (the only variant
@@ -65,8 +66,16 @@ function ProductCardBase({ product }) {
   // Reading it from the store there keeps it out of the render subscription.
   const getCartItems = () => store.getState().cart.cartItems;
 
-  const stock = product.stock || 0;
-  const isOutOfStock = stock <= 0;
+  // Availability and price describe the WHOLE product (every purchasable option), not only the main counter — see
+  // utils/purchaseOptions.js (listStockSummary / listPriceSummary / needsOptionChoice).
+  const stockInfo = listStockSummary(product);
+  const summary = listPriceSummary(product);
+  // A product with variants cannot be "added" from the grid: the shopper has to pick an option, otherwise the MAIN product
+  // would be bought by accident (or rejected by the server when the main option is not sold).
+  const choose = needsOptionChoice(product);
+  const showCount = !stockInfo.out && stockInfo.units != null && !stockInfo.multi; // a number only when ONE tracked option exists
+  const stock = stockInfo.out ? 0 : (stockInfo.units ?? 999999);
+  const isOutOfStock = stockInfo.out;
   const avgRating = Number(product.rating || 0);
   const reviewCount = Number(product.reviewCount || 0);
 
@@ -120,7 +129,7 @@ function ProductCardBase({ product }) {
   if (isOutOfStock) {
     stockText = 'Out of Stock';
     stockItalic = true;
-  } else if (stock <= 5) {
+  } else if (showCount && stock <= 5) {
     stockText = `${stock} left`;
     stockItalic = false;
   } else {
@@ -174,7 +183,7 @@ function ProductCardBase({ product }) {
         <View className="mt-auto">
           <View className="mb-2 mt-2.5 flex-row items-center justify-between">
             <Text className="font-sans-semibold text-lg text-ink">
-              ₹{Number(product.price || 0).toFixed(2)}
+              {summary.prefix ? `${summary.prefix} ` : ''}₹{Number(summary.price || 0).toFixed(2)}
             </Text>
             <Text
               className="font-sans-medium text-[10px] text-primary"
@@ -182,6 +191,7 @@ function ProductCardBase({ product }) {
               {stockText}
             </Text>
           </View>
+          {summary.note ? <Text className="mb-2 font-sans text-[11px] text-muted">{summary.note}</Text> : null}
 
           {isOutOfStock ? (
             <View className="h-9 items-center justify-center rounded-full bg-surface-muted">
@@ -189,6 +199,14 @@ function ProductCardBase({ product }) {
                 Out of Stock
               </Text>
             </View>
+          ) : choose ? (
+            <Pressable
+              onPress={goToProduct}
+              className="h-9 items-center justify-center rounded-full bg-primary active:opacity-80">
+              <Text className="font-sans-bold text-xs uppercase tracking-wide text-inverse">
+                Choose options
+              </Text>
+            </Pressable>
           ) : existingItem ? (
             <View className="h-9 flex-row items-center justify-between overflow-hidden rounded-full border border-primary">
               <Pressable

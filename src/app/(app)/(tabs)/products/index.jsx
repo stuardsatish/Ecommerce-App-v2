@@ -16,6 +16,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { supabase } from '@/lib/supabase';
 import { addProduct } from '@/store/ProductSlice';
 import { mapProductRows } from '@/utils/mappers';
+import { listPriceSummary } from '@/utils/purchaseOptions';
 import { getRecentlyViewedIds } from '@/utils/recentlyViewed';
 import {
   addRecentSearch,
@@ -23,6 +24,10 @@ import {
   getRecentSearches,
   removeRecentSearch,
 } from '@/utils/searchHistory';
+
+// The price the list card shows: the MAIN price, or the lowest variant price when the main product is not sold
+// (utils/purchaseOptions listPriceSummary). Filters and sorting must agree with what the shopper sees.
+const listPrice = (product) => Number(listPriceSummary(product).price || 0);
 
 /**
  * Ported from Ecommerce-sept-1-2026/src/pages/ProductsPage/ProductsPage.jsx's
@@ -166,13 +171,14 @@ export default function ProductsScreen() {
     let filtered = products.filter(
       (product) =>
         (selectedCategories.length ? selectedCategories.includes(product.category) : true) &&
-        product.price >= minPrice &&
+        listPrice(product) >= minPrice &&
         Number(product.rating || 0) >= minRating &&
         product.title?.toLowerCase().includes(needle)
     );
 
-    if (sort === 'priceLow') filtered.sort((a, b) => a.price - b.price);
-    else if (sort === 'priceHigh') filtered.sort((a, b) => b.price - a.price);
+    // Price filter / sort use the price the card SHOWS (main price, or the lowest variant when the main product is not sold)
+    if (sort === 'priceLow') filtered.sort((a, b) => listPrice(a) - listPrice(b));
+    else if (sort === 'priceHigh') filtered.sort((a, b) => listPrice(b) - listPrice(a));
     else if (sort === 'rating') filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
     const grouped = filtered.reduce((acc, product) => {
@@ -193,7 +199,7 @@ export default function ProductsScreen() {
     // Hermes/JSC) — a catalog that size would throw RangeError here and take
     // the whole screen down rather than degrade.
     return products.reduce((max, p) => {
-      const price = Number(p.price || 0);
+      const price = listPrice(p);
       return price > max ? price : max;
     }, 0);
   }, [products]);

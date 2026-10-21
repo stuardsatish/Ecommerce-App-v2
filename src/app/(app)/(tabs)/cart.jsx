@@ -600,10 +600,13 @@ export default function CartScreen() {
         const discount = isDiscountActive(item) ? Number(item.discount || 0) : 0;
         const discountedPrice = Number((mrp - (mrp * discount) / 100).toFixed(2));
         const variantLabel = item.variant_name ? ` [${item.variant_name}]` : '';
+        // "Ref: productId|variantId" (variantId empty = the main option) lets the order be matched to the exact
+        // purchasable option server-side; older clients omit it and the title is used instead.
+        const refLine = `Ref: ${item.productId || ''}|${item.variant_id || ''}`;
         if (discount > 0) {
-          itemsStr += `${index + 1}. ${item.title}${variantLabel}\n Quantity: ${item.quantity}\n MRP: ${money(mrp)}\n Discount: ${discount}%\n Discounted Price: ${money(discountedPrice)}\n\n`;
+          itemsStr += `${index + 1}. ${item.title}${variantLabel}\n ${refLine}\n Quantity: ${item.quantity}\n MRP: ${money(mrp)}\n Discount: ${discount}%\n Discounted Price: ${money(discountedPrice)}\n\n`;
         } else {
-          itemsStr += `${index + 1}. ${item.title}${variantLabel}\n Quantity: ${item.quantity}\n MRP: ${money(mrp)}\n Discounted Price: ${money(mrp)}\n\n`;
+          itemsStr += `${index + 1}. ${item.title}${variantLabel}\n ${refLine}\n Quantity: ${item.quantity}\n MRP: ${money(mrp)}\n Discounted Price: ${money(mrp)}\n\n`;
         }
       });
 
@@ -642,7 +645,18 @@ Thank you.`;
     }
   };
 
-  const handleCheckout = () => setShowPaymentSheet(true);
+  const handleCheckout = () => {
+    // A line whose variant was deactivated/deleted (or whose main product is no longer sold on its own) cannot be
+    // bought; the server would refuse it, so say so here instead of failing after payment starts.
+    const blocked = cartItems.find((i) => i.unavailable);
+    if (blocked) {
+      toast.error(
+        `${blocked.title}${blocked.variant_name ? ` (${blocked.variant_name})` : ''} is no longer available — please remove it from your cart.`
+      );
+      return;
+    }
+    setShowPaymentSheet(true);
+  };
 
   if (cartItems.length === 0) {
     return (
@@ -904,7 +918,7 @@ Thank you.`;
                 style={{ gap: 12 }}>
                 <View className="flex-row items-center justify-between">
                   <View style={{ flex: 1 }}>
-                    <Text className="font-sans-bold text-sm text-ink">🎁 Gift wrap this order</Text>
+                    <Text className="font-sans-bold text-sm text-ink"> Gift wrap this order</Text>
                     <Text className="text-[11px] text-muted mt-0.5">We'll wrap your items beautifully</Text>
                   </View>
                   <Pressable

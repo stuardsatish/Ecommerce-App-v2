@@ -3,10 +3,10 @@
  *
  * Responsibilities:
  *   1. Request permission + obtain the Expo Push Token (EPT).
- *   2. Upsert the token into `public.device_tokens` so the
- *      `notifications-dispatch` Edge Function can find it.
+ *   2. Register the token (register_device_token RPC -> `public.device_tokens`)
+ *      so the `notifications-dispatch` Edge Function can find it.
  *   3. Expose helpers for reading in-app notifications from
- *      `public.notifications` (the in-app inbox).
+ *      `public.notifications` (the in-app inbox; see services/inbox.js).
  *   4. Expose helpers for managing `notification_preferences`.
  *
  * Design choices:
@@ -26,6 +26,8 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
+import { inboxService } from '@/services/inbox';
+import { rememberPushToken } from '@/services/pushToken';
 
 // ── Foreground notification behaviour ──────────────────────────────────────
 // Show an alert + badge + sound even when the app is in the foreground (mobile only).
@@ -86,9 +88,13 @@ export async function getExpoPushToken() {
 
 /**
  * Registers the device's Expo Push Token with Supabase.
- * Safe to call on every app launch — the token column is UNIQUE and
- * the upsert only updates `last_seen_at` + `app_version` if the row
- * already exists.
+ * Safe to call on every app launch — register_device_token() upserts on the
+ * UNIQUE token (refreshing last_seen_at / app_version), and a token moves to
+ * whoever signs in last on the phone.
+ *
+ * Goes through the RPC because direct inserts / updates on `device_tokens` are
+ * revoked from the app roles (migration 20261008_04): the previous direct upsert
+ * was silently refused, so no token was ever stored (known issue K-7 / P-11).
  *
  * @param {string} token The EPT returned by getExpoPushToken().
  * @returns {Promise<void>}
@@ -101,36 +107,29 @@ export async function registerPushToken(token) {
 
     const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
 
-    await supabase.from('device_tokens').upsert(
-      {
-        user_id: user.id,
-        token,
-        platform,
-        device_name: Device.deviceName || null,
-        app_version: '1.0.0',
-        enabled: true,
-        last_seen_at: new Date().toISOString(),
-      },
-      { onConflict: 'token', ignoreDuplicates: false }
-    );
+    await inboxService.registerToken({
+      token,
+      platform,
+      deviceName: Device.deviceName || null,
+      appVersion: '1.0.0',
+    });
+    rememberPushToken(token); // so logout can unregister it while the session is still valid (hooks/useAuth.js)
   } catch (err) {
     console.warn('[notifications] registerPushToken failed:', err?.message);
   }
 }
 
 /**
- * Disables (soft-deletes) the token when the user signs out, so they
- * stop receiving notifications for the old session.
+ * Forgets the token when the user signs out, so they stop receiving
+ * notifications for the old session (unregister_device_token() deletes the row,
+ * and only if it belongs to the signed-in user).
  *
  * @param {string} token
  */
 export async function deregisterPushToken(token) {
   if (!token) return;
   try {
-    await supabase
-      .from('device_tokens')
-      .update({ enabled: false })
-      .eq('token', token);
+    await inboxService.unregisterToken(token);
   } catch (err) {
     console.warn('[notifications] deregisterPushToken failed:', err?.message);
   }
@@ -140,19 +139,15 @@ export async function deregisterPushToken(token) {
 
 /**
  * Fetches the most recent in-app notifications for the current user.
+ * The table's columns are kind / read_at (the first version asked for type / is_read, which do not exist, so
+ * the inbox was always empty - known issue K-7 / P-11); rows come back mapped by utils/notificationModel.js.
  *
  * @param {{ limit?: number }} options
- * @returns {Promise<Array<{id, type, title, body, data, is_read, created_at}>>}
+ * @returns {Promise<Array<{id, kind, title, body, data, type, createdAt, readAt, read}>>}
  */
 export async function listNotifications({ limit = 30 } = {}) {
   try {
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, type, title, body, data, is_read, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (error) throw error;
-    return data || [];
+    return await inboxService.list({ limit });
   } catch (err) {
     console.warn('[notifications] listNotifications failed:', err?.message);
     return [];
@@ -160,16 +155,13 @@ export async function listNotifications({ limit = 30 } = {}) {
 }
 
 /**
- * Marks a single notification as read.
+ * Marks a single notification as read (mark_notifications_read() - the only write a customer may make on the table).
  *
  * @param {string} notificationId
  */
 export async function markNotificationRead(notificationId) {
   try {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId);
+    await inboxService.markRead([notificationId]);
   } catch (err) {
     console.warn('[notifications] markNotificationRead failed:', err?.message);
   }
@@ -180,10 +172,7 @@ export async function markNotificationRead(notificationId) {
  */
 export async function markAllNotificationsRead() {
   try {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('is_read', false);
+    await inboxService.markRead(null);
   } catch (err) {
     console.warn('[notifications] markAllNotificationsRead failed:', err?.message);
   }
@@ -240,10 +229,13 @@ export async function saveNotificationPreferences(prefs) {
  * Adds a "notify me when back in stock" alert for a product.
  * Matches the existing `stock_alerts` table (from Phase 7.4 migration).
  *
+ * stock_alerts.variant_id is NOT NULL DEFAULT '' (migration 20261014_01): '' = the main (or only) option,
+ * so a missing variant is always normalised to '' — never NULL, which would violate the constraint.
+ *
  * @param {string} productId
- * @param {string|null} variantId
+ * @param {string|null} [variantId] '' / null / undefined = main option
  */
-export async function addStockAlert(productId, variantId = null) {
+export async function addStockAlert(productId, variantId = '') {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Login required');
@@ -251,7 +243,7 @@ export async function addStockAlert(productId, variantId = null) {
       {
         user_id: user.id,
         product_id: productId,
-        variant_id: variantId,
+        variant_id: variantId || '',
       },
       { onConflict: 'user_id,product_id,variant_id', ignoreDuplicates: true }
     );
@@ -266,23 +258,18 @@ export async function addStockAlert(productId, variantId = null) {
  * Removes a stock alert for a product (if the user no longer wants it).
  *
  * @param {string} productId
- * @param {string|null} variantId
+ * @param {string|null} [variantId] '' / null / undefined = main option
  */
-export async function removeStockAlert(productId, variantId = null) {
+export async function removeStockAlert(productId, variantId = '') {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    let q = supabase
+    await supabase
       .from('stock_alerts')
       .delete()
       .eq('user_id', user.id)
-      .eq('product_id', productId);
-    if (variantId) {
-      q = q.eq('variant_id', variantId);
-    } else {
-      q = q.is('variant_id', null);
-    }
-    await q;
+      .eq('product_id', productId)
+      .eq('variant_id', variantId || '');
   } catch (err) {
     console.warn('[notifications] removeStockAlert failed:', err?.message);
   }
@@ -292,24 +279,19 @@ export async function removeStockAlert(productId, variantId = null) {
  * Checks whether the current user has a stock alert for a given product.
  *
  * @param {string} productId
- * @param {string|null} variantId
+ * @param {string|null} [variantId] '' / null / undefined = main option
  * @returns {Promise<boolean>}
  */
-export async function hasStockAlert(productId, variantId = null) {
+export async function hasStockAlert(productId, variantId = '') {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return false;
-    let q = supabase
+    const { count } = await supabase
       .from('stock_alerts')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .eq('product_id', productId);
-    if (variantId) {
-      q = q.eq('variant_id', variantId);
-    } else {
-      q = q.is('variant_id', null);
-    }
-    const { count } = await q;
+      .eq('product_id', productId)
+      .eq('variant_id', variantId || '');
     return (count || 0) > 0;
   } catch {
     return false;

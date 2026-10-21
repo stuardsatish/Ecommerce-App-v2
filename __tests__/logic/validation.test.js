@@ -141,4 +141,18 @@ describe('validateImageFile', () => {
     expect(validateImageFile({ uri: 'file:///p/a.png' }).ok).toBe(true);
     expect(validateImageFile({ uri: 'file:///p/a.exe' }).ok).toBe(false);
   });
+
+  it('reads the extension of the LEAF only: a URI without one is judged by its mime type, and a dot in a folder is not an extension', () => {
+    // a picker URI with no extension (a blob: URL on Expo web, an extension-less cache copy)
+    expect(validateImageFile({ uri: 'file:///cache/ImagePicker/1234', mimeType: 'image/png' }).ok).toBe(true);
+    expect(validateImageFile({ uri: 'blob:http://localhost:8081/0b1f-uuid', mimeType: 'image/jpeg' }).ok).toBe(true);
+    // the Android package name contains dots
+    expect(validateImageFile({ uri: 'file:///data/user/0/com.ecommerceapp.mobile/cache/1234', mimeType: 'image/webp' }).ok).toBe(true);
+    // ... but the mime type still has the last word
+    expect(validateImageFile({ uri: 'file:///cache/ImagePicker/1234', mimeType: 'application/pdf' }).ok).toBe(false);
+    expect(validateImageFile({ uri: 'file:///cache/ImagePicker/1234', mimeType: 'image/svg+xml' }).error).toBe('SVG files are not allowed.');
+    // a real extension still counts, and so does a double extension's LAST part
+    expect(validateImageFile({ uri: 'file:///p/photo.jpeg.exe' }).ok).toBe(false);
+    expect(validateImageFile({ fileName: 'IMG 1.PNG', uri: 'file:///cache/x' }).ok).toBe(true);
+  });
 });
