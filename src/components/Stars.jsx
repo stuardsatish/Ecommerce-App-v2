@@ -18,7 +18,7 @@ import { useThemeColors } from '@/hooks/useThemeColors';
  */
 export function Stars({ rating = 0, size = 12, gap = 2, round = true }) {
   const c = useThemeColors();
-  const filled = round ? Math.round(Number(rating) || 0) : Number(rating) || 0;
+  const filled = round ? Math.round(Number(rating) || 0) : Math.floor(Number(rating) || 0);
 
   return (
     <View className="flex-row items-center" style={{ gap }}>

@@ -25,6 +25,7 @@ module.exports = {
       setupFiles: ['<rootDir>/__tests__/setup/env.js'],
       moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
+        '^@react-native-async-storage/async-storage$': '<rootDir>/__tests__/setup/asyncStorageMock.js',
       },
       transform: {
         '^.+\\.[jt]sx?$': ['babel-jest', { presets: [['babel-preset-expo', { jsxImportSource: 'nativewind' }]] }],
@@ -41,7 +42,7 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/src/$1',
       },
       transformIgnorePatterns: [
-        'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|nativewind|react-native-css-interop|react-redux|@reduxjs/toolkit)',
+        'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|nativewind|react-native-css-interop|react-redux|@reduxjs/toolkit|immer)',
       ],
       clearMocks: true,
     },

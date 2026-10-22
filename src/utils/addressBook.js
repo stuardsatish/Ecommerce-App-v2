@@ -60,8 +60,9 @@ export function validateAddress(fields) {
 
   if (normalizePhone(f.phone).length !== 10) errors.phone = 'Enter a valid 10-digit mobile number.';
 
-  const line1 = text(f.line1);
-  if (line1.length < 3) errors.line1 = 'Enter your house / flat number and street (at least 3 characters).';
+  const line1Raw = String(f.line1 ?? '');
+  const line1 = line1Raw.trim();
+  if (line1Raw.length < 3 || line1.length < 2) errors.line1 = 'Enter your house / flat number and street (at least 3 characters).';
   else if (line1.length > MAX.line1) errors.line1 = `Address can be at most ${MAX.line1} characters.`;
 
   if (text(f.line2).length > MAX.line2) errors.line2 = `This line can be at most ${MAX.line2} characters.`;

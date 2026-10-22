@@ -48,10 +48,15 @@ const COMPANY = {
 };
 const LEGACY_GST_RATE = 18;
 
+/** Strips event-handler attribute patterns (` onXxx=`) that survive tag removal. */
+const stripHandlers = (s) => s.replace(/\s+on[a-z]+\s*=/gi, ' ');
+
 const clean = (v, fallback = 'N/A') => {
-  const s = String(v ?? '')
-    .replace(/<[^>]*>/g, '')
-    .trim();
+  const s = stripHandlers(
+    String(v ?? '')
+      .replace(/<[^>]*>/g, '')
+      .trim()
+  );
   return s === '' ? fallback : s;
 };
 
@@ -115,10 +120,10 @@ const fileSafe = (s) =>
 
 const formatAddress = (v) => {
   if (!v) return '';
-  if (typeof v === 'string') return v.replace(/<[^>]*>/g, '').trim();
+  if (typeof v === 'string') return esc(stripHandlers(v.replace(/<[^>]*>/g, '').trim()));
   if (typeof v === 'object') {
     return [v.street, v.city, v.state, v.pincode, v.country]
-      .map((s) => String(s ?? '').replace(/<[^>]*>/g, '').trim())
+      .map((s) => esc(stripHandlers(String(s ?? '').replace(/<[^>]*>/g, '').trim())))
       .filter(Boolean)
       .join(', ');
   }
@@ -198,8 +203,8 @@ export function computeInvoiceData(order, userDetails, settings) {
     }
     const name =
       discAmt > 0
-        ? `${clean(p.title, 'Item')} (${discPct} off ₹${mrp.toFixed(2)})`
-        : clean(p.title, 'Item');
+        ? `${esc(clean(p.title, 'Item'))} (${discPct} off &#8377;${mrp.toFixed(2)})`
+        : esc(clean(p.title, 'Item'));
     return {
       idx: i + 1,
       name,
@@ -255,39 +260,38 @@ export function computeInvoiceData(order, userDetails, settings) {
     }
   }
 
-  const addr = clean(
+  const rawAddr =
     formatAddress(userDetails.address) ||
-      formatAddress(order.userAddress) ||
-      formatAddress(order.address) ||
-      formatAddress(order.shippingAddress),
-    'Address not on file'
-  );
-  const emailVal = clean(userDetails.email || order.userEmail);
-  const phoneVal = clean(userDetails.phone || order.userPhone);
+    formatAddress(order.userAddress) ||
+    formatAddress(order.address) ||
+    formatAddress(order.shippingAddress);
+  const addr = rawAddr || 'Address not on file';
+  const emailVal = esc(clean(userDetails.email || order.userEmail));
+  const phoneVal = esc(clean(userDetails.phone || order.userPhone));
 
-  const txnId = clean(order.razorpayPaymentId, '');
+  const txnId = esc(clean(order.razorpayPaymentId, ''));
   const payMethodStr =
     String(order.paymentMethod || '').toLowerCase() === 'cod'
       ? 'Cash on Delivery (COD)'
-      : clean(order.paymentMethod, 'N/A');
+      : esc(clean(order.paymentMethod, 'N/A'));
   const payStatusStr =
     String(order.paymentStatus || '').toLowerCase() === 'pending'
       ? 'UNPAID / PENDING ON DELIVERY'
-      : clean(order.paymentStatus, 'N/A').toUpperCase();
+      : esc(clean(order.paymentStatus, 'N/A')).toUpperCase();
 
   return {
-    companyName,
-    address,
-    email,
-    phone,
-    gstin,
-    website,
+    companyName: esc(stripHandlers(companyName)),
+    address: esc(stripHandlers(address)),
+    email: esc(stripHandlers(email)),
+    phone: esc(stripHandlers(phone)),
+    gstin: esc(stripHandlers(gstin)),
+    website: esc(stripHandlers(website)),
     logo,
-    rawId,
-    invoiceNo,
-    invoiceDate: fmtDate(now),
-    orderDate,
-    customerName,
+    rawId: esc(stripHandlers(rawId)),
+    invoiceNo: esc(stripHandlers(invoiceNo)),
+    invoiceDate: esc(fmtDate(now)),
+    orderDate: esc(stripHandlers(orderDate)),
+    customerName: esc(stripHandlers(customerName)),
     addr,
     emailVal,
     phoneVal,
@@ -301,16 +305,16 @@ export function computeInvoiceData(order, userDetails, settings) {
     totalIgst,
     shipping,
     promoDiscount,
-    promoCode,
+    promoCode: esc(stripHandlers(promoCode)),
     grand,
     txnId,
     payMethodStr,
     payStatusStr,
-    footerTitle: settings.footerTitle || 'Thank You!',
-    footerSubNote: settings.footerSubNote || '',
-    supportEmail: settings.supportEmail || '',
-    supportPhone: settings.supportPhone || '',
-    upiId: settings.upiId || '',
+    footerTitle: esc(stripHandlers(settings.footerTitle || 'Thank You!')),
+    footerSubNote: esc(stripHandlers(settings.footerSubNote || '')),
+    supportEmail: esc(stripHandlers(settings.supportEmail || '')),
+    supportPhone: esc(stripHandlers(settings.supportPhone || '')),
+    upiId: esc(stripHandlers(settings.upiId || '')),
   };
 }
 
@@ -320,7 +324,7 @@ export function buildInvoiceHtml(d) {
       (l) => `
       <tr>
         <td class="c">${l.idx}</td>
-        <td>${esc(l.name)}</td>
+        <td>${l.name}</td>
         <td class="c">${esc(l.hsn)}</td>
         <td class="c">${l.qty}</td>
         <td class="r">${money(l.unit)}</td>
@@ -383,33 +387,33 @@ export function buildInvoiceHtml(d) {
         <div class="company">
           ${escUrl(d.logo) ? `<img src="${escUrl(d.logo)}" />` : ''}
           <div>
-            <h1>${esc(d.companyName)}</h1>
-            <p>${esc(d.address)}</p>
-            <p>${[d.email, d.phone, d.website].filter(Boolean).map(esc).join(' | ')}</p>
-            <p>GSTIN: ${esc(d.gstin)}</p>
+            <h1>${d.companyName}</h1>
+            <p>${d.address}</p>
+            <p>${[d.email, d.phone, d.website].filter(Boolean).join(' | ')}</p>
+            <p>GSTIN: ${d.gstin}</p>
           </div>
         </div>
         <div class="invoice-meta">
           <h2>TAX INVOICE</h2>
-          <p>Invoice No: ${esc(d.invoiceNo)}</p>
-          <p>Invoice Date: ${esc(d.invoiceDate)}</p>
-          <p>Order Date: ${esc(d.orderDate)}</p>
+          <p>Invoice No: ${d.invoiceNo}</p>
+          <p>Invoice Date: ${d.invoiceDate}</p>
+          <p>Order Date: ${d.orderDate}</p>
         </div>
       </div>
 
       <div class="addresses">
         <div>
           <h3>BILL TO</h3>
-          <p>${esc(d.customerName)}</p>
-          <p>${esc(d.emailVal)}</p>
-          <p>${esc(d.phoneVal)}</p>
-          <p>${esc(d.addr)}</p>
+          <p>${d.customerName}</p>
+          <p>${d.emailVal}</p>
+          <p>${d.phoneVal}</p>
+          <p>${d.addr}</p>
         </div>
         <div>
           <h3>SHIP TO</h3>
-          <p>${esc(d.customerName)}</p>
-          <p>${esc(d.phoneVal)}</p>
-          <p>${esc(d.addr)}</p>
+          <p>${d.customerName}</p>
+          <p>${d.phoneVal}</p>
+          <p>${d.addr}</p>
         </div>
       </div>
 
@@ -453,7 +457,7 @@ export function buildInvoiceHtml(d) {
           <div class="row"><span>Shipping</span><span>${d.shipping === 0 ? 'FREE' : money(d.shipping)}</span></div>
           ${
             d.promoDiscount > 0
-              ? `<div class="row"><span>Promo Discount${d.promoCode ? ` (${esc(d.promoCode)})` : ''}</span><span>-${money(d.promoDiscount)}</span></div>`
+              ? `<div class="row"><span>Promo Discount${d.promoCode ? ` (${d.promoCode})` : ''}</span><span>-${money(d.promoDiscount)}</span></div>`
               : ''
           }
           <div class="row grand"><span>Grand Total</span><span>${money(d.grand)}</span></div>
@@ -461,16 +465,16 @@ export function buildInvoiceHtml(d) {
       </div>
 
       <div class="payment">
-        <p><strong>Payment Method:</strong> ${esc(d.payMethodStr)}</p>
-        <p><strong>Payment Status:</strong> ${esc(d.payStatusStr)}</p>
-        ${d.txnId ? `<p><strong>Transaction ID:</strong> ${esc(d.txnId)}</p>` : ''}
+        <p><strong>Payment Method:</strong> ${d.payMethodStr}</p>
+        <p><strong>Payment Status:</strong> ${d.payStatusStr}</p>
+        ${d.txnId ? `<p><strong>Transaction ID:</strong> ${d.txnId}</p>` : ''}
       </div>
 
       <div class="footer">
-        <h4>${esc(d.footerTitle)}</h4>
-        ${d.footerSubNote ? `<p>${esc(d.footerSubNote)}</p>` : ''}
-        ${d.supportEmail || d.supportPhone ? `<p>Need help? ${d.supportEmail ? `Email ${esc(d.supportEmail)}` : ''}${d.supportEmail && d.supportPhone ? ' or ' : ''}${d.supportPhone ? `Call ${esc(d.supportPhone)}` : ''}</p>` : ''}
-        ${d.upiId ? `<p>UPI ID: ${esc(d.upiId)}</p>` : ''}
+        <h4>${d.footerTitle}</h4>
+        ${d.footerSubNote ? `<p>${d.footerSubNote}</p>` : ''}
+        ${d.supportEmail || d.supportPhone ? `<p>Need help? ${d.supportEmail ? `Email ${d.supportEmail}` : ''}${d.supportEmail && d.supportPhone ? ' or ' : ''}${d.supportPhone ? `Call ${d.supportPhone}` : ''}</p>` : ''}
+        ${d.upiId ? `<p>UPI ID: ${d.upiId}</p>` : ''}
         <p class="disclaimer">This is a computer-generated invoice and does not require a signature.</p>
       </div>
     </body>
